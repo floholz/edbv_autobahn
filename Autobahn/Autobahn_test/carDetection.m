@@ -1,10 +1,13 @@
 %Quelle: https://www.mathworks.com/help/vision/examples/detecting-cars-using-gaussian-mixture-models.html
 
+
+
 foregroundDetector = vision.ForegroundDetector('NumGaussians', 3, ...
     'NumTrainingFrames', 50);
 
-videoReader = vision.VideoFileReader('autobahn_qf.mp4');
-for i = 1:150
+videoReader = vision.VideoFileReader('Video 3.0 #1_STAB.mp4');
+
+for i = 1:300
     frame = step(videoReader); % read the next video frame
     foreground = step(foregroundDetector, frame);
 end
@@ -39,7 +42,8 @@ while ~isDone(videoReader)
     foreground = step(foregroundDetector, frame);
 
     % Use morphological opening to remove noise in the foreground
-    filteredForeground = imerode(foreground, se);
+    filteredForeground = foreground;
+    %filteredForeground = imerode(foreground, se);
     filteredForeground = imopen(filteredForeground, se);
 
     % Detect the connected components with the specified minimum area, and
