@@ -67,9 +67,10 @@ se = strel('square', 3); % morphological filter for noise removal
 i=0;
 background = uint8(background);
 
-% nframes = videoReader.NumberOfFrames
-% taggedCars = zeros([size(I,1) size(I,2) 3 nframes], class(I));
-% taggedCars = zeros([pictureSize(1) picturesize(2) picturesize(3) ], single);
+nframes = video.NumberOfFrames;
+fps = video.FrameRate;
+taggedCars = zeros([pictureSize(1) pictureSize(2) pictureSize(3) nframes], 'single'); %class(read(video, 1)));
+
 
 while ~isDone(videoReader)
     i=i+1;
@@ -111,9 +112,11 @@ while ~isDone(videoReader)
     result = insertText(result, [10 10], numCars, 'BoxOpacity', 1, ...
         'FontSize', 14);
     
-%     taggedCars(:,:,:,i) = result;
 
-    step(videoPlayer, result);  % display the results
+    taggedCars(:,:,:,i) = result;
+    %step(videoPlayer, result);  % display the results
 end
+
+implay(taggedCars, fps);
 
 release(videoReader); % close the video file
