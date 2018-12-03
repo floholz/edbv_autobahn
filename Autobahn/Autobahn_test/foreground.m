@@ -1,5 +1,7 @@
+videoSource = 'Video 3.0 #1_STAB.mp4';
+%videoSource = 'autobahn_qf.mp4';
 %read Video
-video = VideoReader('Video 3.0 #1_STAB.mp4');
+video = VideoReader(videoSource);
 
 %get FrameSize
 frame1 = read(video, 1);
@@ -17,11 +19,12 @@ for i = 1:pictureSize(1)
         background(i,j) = mode(squeeze(countMatrix(i,j,1:50)));
     end
 end
-
+imshow(background, [0 255]);
 %get detection lines
 lines = background >= 250;
-lines = bwmorph(lines, 'skel', 10);
+lines = bwmorph(lines, 'skel', 8);
 lines = imopen(lines, strel('line', 6, 90));
+imshow(lines, [0 1]);
 line1begin=0;
 line2begin=0;
 schwarz1 = 0;
@@ -29,7 +32,7 @@ weiss1 = 0;
 schwarz2 = 0;
 for i = 1:pictureSize(1)-1
     if (schwarz1 == 0) 
-        for j = 1:pictureSize(2)-1
+        for j = 256:pictureSize(2)-256
             if (lines(pictureSize(1)-i, j) ~= 0)
                 schwarz1 = 1;
             end
@@ -37,7 +40,7 @@ for i = 1:pictureSize(1)-1
     end
     if schwarz1 == 1
         if(weiss1==0)
-            if(~(lines(pictureSize(1)-i,1:end) ~= 0))
+            if(~(lines(pictureSize(1)-i,256:end-256) ~= 0))
                 weiss1 = 1;
                 line1begin=pictureSize(1)-i;
             end
@@ -45,7 +48,7 @@ for i = 1:pictureSize(1)-1
     end
     if weiss1 == 1
         if(schwarz2==0)
-            for j = 1:pictureSize(2)-1
+            for j = 256:pictureSize(2)-256
                 if (lines(pictureSize(1)-i, j) ~= 0)
                     schwarz2 = 1;
                     line2begin = pictureSize(1)-i;
@@ -55,7 +58,7 @@ for i = 1:pictureSize(1)-1
     end
 end
 
-videoReader = vision.VideoFileReader('Video 3.0 #1_STAB.mp4');
+videoReader = vision.VideoFileReader(videoSource);
 videoPlayer = vision.VideoPlayer('Name', 'Detected Cars');
 
 blobAnalysis = vision.BlobAnalysis('BoundingBoxOutputPort', true, ...
@@ -69,12 +72,19 @@ background = uint8(background);
 while ~isDone(videoReader)
     i=i+1;
     frame = step(videoReader); % read the next video frame
-
+    frameGray = (rgb2gray(frame)*255);
+    backgroundSingle = single(background);
+    pixeldifference = frameGray(pictureSize(1), pictureSize(2))-backgroundSingle(pictureSize(1), pictureSize(2));
     % Detect the foreground in the current video frame
     fgFrame = read(video, i);
     fgFrame = rgb2gray(fgFrame);
     fgFrame = uint8(fgFrame);
-    fg = background - fgFrame;
+    if (pixeldifference > 5 || pixeldifference < -5)
+        tempbackground = backgroundSingle+pixeldifference;
+    else
+        tempbackground=backgroundSingle;
+    end
+    fg = uint8(tempbackground) - fgFrame;
     fg = (fg >= 10) | (fg <= -10);
     % Use morphological opening to remove noise in the foreground
     filteredForeground = fg;
@@ -88,11 +98,6 @@ while ~isDone(videoReader)
     % Draw bounding boxes around the detected cars and lines
     result = insertShape(frame, 'Rectangle', bbox, 'Color', 'green');
     result = insertShape(result, 'line', [0 line2begin pictureSize(2) line2begin; 0 line1begin pictureSize(2) line1begin]);
-
-    % Display the number of cars found in the video frame
-    numCars = size(bbox, 1);
-    result = insertText(result, [10 10], numCars, 'BoxOpacity', 1, ...
-        'FontSize', 14);
 
     step(videoPlayer, result);  % display the results
 end
