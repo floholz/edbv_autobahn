@@ -1,73 +1,161 @@
-% Load Video
-%Git
-%/////////////////////////////////////////////////////////////////////////
-trafficVid = VideoReader('edbv_autobahn_cut.mp4')
-%trafficVid = VideoReader('traffic.mj2')
-get(trafficVid)
-%implay('edbv_autobahn_cut.mp4');  % show Video
+videoSource = 'Video 3.0 #1_STAB.mp4';
+%videoSource = 'autobahn_qf.mp4';
+%read Video
+video = VideoReader(videoSource);
 
-% Select Reference-Image
-%/////////////////////////////////////////////////////////////////////////
+%get FrameSize
+frame1 = read(video, 1);
+pictureSize = size(frame1);
 
-darkCarValue = 80;
-darkCar = rgb2gray(read(trafficVid,262));
-noDarkCar = imextendedmax(darkCar, darkCarValue);
-imshow(darkCar)
-
-figure, imshow(noDarkCar)
-
-sedisk = strel('disk',2);
-noSmallStructures = imopen(noDarkCar, sedisk);
-figure, imshow(noSmallStructures)
-
-
-
-% Algorithm 
-%/////////////////////////////////////////////////////////////////////////
-
-nframes = trafficVid.NumberOfFrames;
-I = read(trafficVid, 1);
-taggedCars = zeros([size(I,1) size(I,2) 3 nframes], class(I));
-
-for k = 1 : nframes
-    singleFrame = read(trafficVid, k);
-    
-    % Convert to grayscale to do morphological processing.
-    I = rgb2gray(singleFrame);
-    
-    % Remove dark cars.
-    noDarkCars = imextendedmax(I, darkCarValue); 
-    
-    % Remove lane markings and other non-disk shaped structures.
-    noSmallStructures = imopen(noDarkCars, sedisk);
-
-    % Remove small structures.
-    noSmallStructures = bwareaopen(noSmallStructures, 150);
-   
-    % Get the area and centroid of each remaining object in the frame. The
-    % object with the largest area is the light-colored car.  Create a copy
-    % of the original frame and tag the car by changing the centroid pixel
-    % value to red.
-    taggedCars(:,:,:,k) = singleFrame;
-   
-    stats = regionprops(noSmallStructures, {'Centroid','Area'});
-    if ~isempty([stats.Area])
-        areaArray = [stats.Area];
-        [junk,idx] = max(areaArray);
-        c = stats(idx).Centroid;
-        c = floor(fliplr(c));
-        width = 2;
-        row = c(1)-width:c(1)+width;
-        col = c(2)-width:c(2)+width;
-        taggedCars(row,col,1,k) = 255;
-        taggedCars(row,col,2,k) = 0;
-        taggedCars(row,col,3,k) = 0;
+%get Background
+%take 50 frames and get mode from every pixel
+countMatrix = zeros(pictureSize(1), pictureSize(2), 50);
+for i = 1:50
+    countMatrix(1:end, 1:end, i) = rgb2gray(read(video, i*20));   
+end
+background = zeros(pictureSize(1), pictureSize(2));
+for i = 1:pictureSize(1)
+    for j = 1:pictureSize(2)
+        background(i,j) = mode(squeeze(countMatrix(i,j,1:50)));
+    end
+end
+imshow(background, [0 255]);
+%get detection lines
+lines = background >= 250;
+lines = bwmorph(lines, 'skel', 8);
+lines = imopen(lines, strel('line', 6, 90));
+figure, imshow(lines, [0 1]);
+line1begin=0;
+line2begin=0;
+schwarz1 = 0;
+weiss1 = 0;
+schwarz2 = 0;
+for i = 1:pictureSize(1)-1
+    if (schwarz1 == 0) 
+        for j = 256:pictureSize(2)-256
+            if (lines(pictureSize(1)-i, j) ~= 0)
+                schwarz1 = 1;
+            end
+        end
+    end
+    if schwarz1 == 1
+        if(weiss1==0)
+            if(~(lines(pictureSize(1)-i,256:end-256) ~= 0))
+                weiss1 = 1;
+                line1begin=pictureSize(1)-i;
+            end
+        end
+    end
+    if weiss1 == 1
+        if(schwarz2==0)
+            for j = 256:pictureSize(2)-256
+                if (lines(pictureSize(1)-i, j) ~= 0)
+                    schwarz2 = 1;
+                    line2begin = pictureSize(1)-i;
+                end
+            end
+        end 
     end
 end
 
+videoReader = vision.VideoFileReader(videoSource);
+videoPlayer = vision.VideoPlayer('Name', 'Detected Cars');
 
-% Post-Processed-Image 
-%/////////////////////////////////////////////////////////////////////////
+blobAnalysis = vision.BlobAnalysis('BoundingBoxOutputPort', true, ...
+    'AreaOutputPort', false, 'CentroidOutputPort', false, ...
+    'MinimumBlobArea', 150);
+videoPlayer = vision.VideoPlayer('Name', 'Detected Cars');
+videoPlayer.Position(3:4) = [650,400];  % window size: [width, height]
+se = strel('square', 3); % morphological filter for noise removal
+i=0;
+background = uint8(background);
 
-frameRate = trafficVid.FrameRate;
-implay(taggedCars,frameRate);
+nframes = video.NumberOfFrames;
+fps = video.FrameRate;
+taggedCars = zeros([pictureSize(1) pictureSize(2) pictureSize(3) nframes], 'single'); %class(read(video, 1)));
+
+mcnt = [];
+bboxCnt = 0;
+bboxCntPre = 0;
+
+while ~isDone(videoReader)
+    i=i+1;
+    frame = step(videoReader); % read the next video frame
+    result = frame;
+    frameGray = (rgb2gray(frame)*255);
+    backgroundSingle = single(background);
+    pixeldifference = frameGray(pictureSize(1), pictureSize(2))-backgroundSingle(pictureSize(1), pictureSize(2));
+    % Detect the foreground in the current video frame
+    fgFrame = read(video, i);
+    fgFrame = rgb2gray(fgFrame);
+    fgFrame = uint8(fgFrame);
+    if (pixeldifference > 5 || pixeldifference < -5)
+        tempbackground = backgroundSingle+pixeldifference;
+    else
+        tempbackground=backgroundSingle;
+    end
+    fg = uint8(tempbackground) - fgFrame;
+    fg = (fg >= 10) | (fg <= -10);
+    % Use morphological opening to remove noise in the foreground
+    filteredForeground = fg;
+    filteredForeground = imopen(filteredForeground, se);
+    filteredForeground = imerode(fg, se);
+
+    % Detect the connected components with the specified minimum area, and
+    % compute their bounding boxes
+    bbox = step(blobAnalysis, filteredForeground);
+    
+        lines = [0 line2begin pictureSize(2) line2begin; 0 line1begin pictureSize(2) line1begin];
+    color = {'yellow', 'white'};
+    cbbox = {};
+    txtPos = [10 10];
+    txtStr = size(bbox, 1);
+    
+    cnt = {};
+    
+    bboxCnt = size(bbox, 1);
+    
+    if(bboxCnt < bboxCntPre)
+        
+    elseif(bboxCnt > bboxCntPre)
+        
+    end
+    
+    if(bbox ~= 0)
+        vel = zeros(1, size(bbox, 1));        
+        cnt = mcnt;
+        for k = 1:size(bbox, 1)
+            lines = [lines ; 0 bbox(k, 2)+bbox(k, 4) pictureSize(2) bbox(k, 2)+bbox(k, 4)];
+            color{1, 2+k} = 'blue';
+            
+            cbbox{1, k} = 'green';               
+            
+            if( (bbox(size(bbox, 1)-(k-1), 2) < line1begin) && ... 
+                    ( bbox(size(bbox, 1)-(k-1), 2) > line2begin)) 
+                %cnt(1, size(bbox, 1)-(k-1)) = cnt(1, size(bbox, 1)-(k-1))+1;
+            elseif ( bbox(size(bbox, 1)-(k-1), 2) > line2begin)
+                %vel(1, size(bbox, 1)-(k-1)) = (cnt(1, size(bbox, 1)-(k-1))/fps) * 12*3.6;
+            end 
+            mcnt = cnt;
+            txtPos = [txtPos; bbox(size(bbox, 1)-(k-1), 1) bbox(size(bbox, 1)-(k-1), 2)];            
+            txtStr = [txtStr; k];
+       end
+    end
+    
+
+    % Draw bounding boxes around the detected cars and lines
+    result = insertShape(result, 'Rectangle', bbox, 'Color', cbbox);
+    result = insertShape(result, 'line', lines, 'Color', color);
+
+    % Display the number of cars found in the video frame
+    result = insertText(result, txtPos, txtStr, 'BoxOpacity', 1, ...
+        'FontSize', 14);
+    
+
+    taggedCars(:,:,:,i) = result;
+    %step(videoPlayer, result);  % display the results
+end
+
+implay(taggedCars, fps);
+
+release(videoReader); % close the video file
