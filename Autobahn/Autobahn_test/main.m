@@ -3,8 +3,10 @@ videoSource = 'Video 3.0 #1_STAB.mp4';
 %read Video
 video = VideoReader(videoSource);
 
-%tolerance for background
-tolerance = 20;
+%tolerance threshold for background
+tolerance = 25;
+
+%boxes having that distance will be joined
 bboxDistTolerance = 15;
 
 %get FrameSize
@@ -26,8 +28,8 @@ end
 imshow(background, [0 255]);
 %get detection lines
 lines = background >= 250;
-lines = bwmorph(lines, 'skel', 8);
-lines = imopen(lines, strel('line', 6, 90));
+lines = bwmorph(lines, 'skel', 6);
+lines = imopen(lines, strel('line', 5, 90));
 figure, imshow(lines, [0 1]);
 line1begin=0;
 line2begin=0;
@@ -67,7 +69,7 @@ videoPlayer = vision.VideoPlayer('Name', 'Detected Cars');
 
 blobAnalysis = vision.BlobAnalysis('BoundingBoxOutputPort', true, ...
     'AreaOutputPort', false, 'CentroidOutputPort', false, ...
-    'MinimumBlobArea', 300);
+    'MinimumBlobArea', 150);
 videoPlayer = vision.VideoPlayer('Name', 'Detected Cars');
 videoPlayer.Position(3:4) = [650,400];  % window size: [width, height]
 se = strel('square', 3); % morphological filter for noise removal
@@ -103,8 +105,8 @@ while ~isDone(videoReader)
     fg = (fg >= tolerance) | (fg <= -tolerance);
     % Use morphological opening to remove noise in the foreground
     filteredForeground = fg;
-    filteredForeground = imopen(filteredForeground, se);
     filteredForeground = imerode(fg, se);
+    filteredForeground = imopen(filteredForeground, se);
 
     % Detect the connected components with the specified minimum area, and
     % compute their bounding boxes
