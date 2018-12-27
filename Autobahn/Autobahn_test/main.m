@@ -3,6 +3,10 @@ videoSource = 'Video 3.0 #1_STAB.mp4';
 %read Video
 video = VideoReader(videoSource);
 
+%tolerance for background
+tolerance = 20;
+bboxDistTolerance = 15;
+
 %get FrameSize
 frame1 = read(video, 1);
 pictureSize = size(frame1);
@@ -63,7 +67,7 @@ videoPlayer = vision.VideoPlayer('Name', 'Detected Cars');
 
 blobAnalysis = vision.BlobAnalysis('BoundingBoxOutputPort', true, ...
     'AreaOutputPort', false, 'CentroidOutputPort', false, ...
-    'MinimumBlobArea', 150);
+    'MinimumBlobArea', 300);
 videoPlayer = vision.VideoPlayer('Name', 'Detected Cars');
 videoPlayer.Position(3:4) = [650,400];  % window size: [width, height]
 se = strel('square', 3); % morphological filter for noise removal
@@ -72,7 +76,8 @@ background = uint8(background);
 
 nframes = video.NumberOfFrames;
 fps = video.FrameRate;
-taggedCars = zeros([pictureSize(1) pictureSize(2) pictureSize(3) nframes], 'single'); %class(read(video, 1)));
+taggedCars = zeros([pictureSize(1) pictureSize(2) pictureSize(3) nframes], 'single');
+%class(read(video, 1)));
 
 mcnt = [];
 bboxCnt = 0;
@@ -89,13 +94,13 @@ while ~isDone(videoReader)
     fgFrame = read(video, i);
     fgFrame = rgb2gray(fgFrame);
     fgFrame = uint8(fgFrame);
-    if (pixeldifference > 5 || pixeldifference < -5)
+    if (pixeldifference ~= 0)
         tempbackground = backgroundSingle+pixeldifference;
     else
         tempbackground=backgroundSingle;
     end
     fg = uint8(tempbackground) - fgFrame;
-    fg = (fg >= 10) | (fg <= -10);
+    fg = (fg >= tolerance) | (fg <= -tolerance);
     % Use morphological opening to remove noise in the foreground
     filteredForeground = fg;
     filteredForeground = imopen(filteredForeground, se);
@@ -120,6 +125,40 @@ while ~isDone(videoReader)
     elseif(bboxCnt > bboxCntPre)
         
     end
+    
+    %union overlapping boxes
+    modified = true;
+    while (modified)
+        modified = false;
+    if(bbox ~= 0)
+        for k = 1:size(bbox,1)
+            for j = k:size(bbox,1)
+                if (j<=size(bbox,1) && k<=size(bbox,1))
+                if j ~= k
+                    dist = distance(bbox(k,1), bbox(k,2), bbox(k,3), bbox(k,4),bbox(j,1), bbox(j,2), bbox(j,3), bbox(j,4));
+                    %overlap = bboxOverlapRatio(bbox(k,:), bbox(j,:));
+                    %if (overlap ~= 0)
+                    if (dist <= bboxDistTolerance)
+                        x = min(bbox(k,1), bbox(j,1));
+                        y = min(bbox(k,2), bbox(j,2));
+                        width = max(bbox(k,1)+bbox(k,3), bbox(j,1)+bbox(j,3));
+                        width = width - x;
+                        height = max(bbox(k,2)+bbox(k,4), bbox(j,2)+bbox(j,4));
+                        height = height - y;
+                        bbox(j,:)=[]; %delete box
+                        bbox(k,:)=[x y width height]; %update other box
+                        j=j-1;
+                        modified = true;
+                    end
+                    
+                end
+                end
+            end
+        end
+    end
+    end
+    
+    
     
     if(bbox ~= 0)
         vel = zeros(1, size(bbox, 1));        
@@ -153,6 +192,10 @@ while ~isDone(videoReader)
     
 
     taggedCars(:,:,:,i) = result;
+    
+    percent = i/nframes;
+    disp(percent);
+    
     %step(videoPlayer, result);  % display the results
 end
 
