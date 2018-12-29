@@ -1,19 +1,20 @@
 function main()
 %get Video Source
-videoSource = 'Video 3.0 #1_STAB.mp4';
+videoSource = 'Video 3.0 #s1_STAB.mp4';
 
 %starting waitbar
 percentage = 0;
-bar = waitbar(0,strcat('Loading Video... | ', {' '}, num2str(uint8(percentage*100)), '%'));
-
+bar = waitbar(0,strcat('Loading Video... | ', {' '}, num2str(uint8(percentage*100)), '%'), 'Name', 'EDBV: Car Detection');
 %read Video
 video = VideoReader(videoSource);
 
 %Set tolerance for video
 %tolerance threshold for background
-tolerance = 25;
+tolerance = 20;
 %boxes having that distance will be joined
 bboxDistTolerance = 15;
+%Size for struct Element
+structElementFactor = 5;
 
 %get FrameSize and start of Video
 frame1 = readFrame(video);
@@ -121,7 +122,7 @@ video.CurrentTime = videoStart;
 
 videoPlayer = vision.VideoPlayer('Name', 'Detected Cars');
 videoPlayer.Position(3:4) = [650,400];  % window size: [width, height]
-se = strel('square', 3); % morphological filter for noise removal
+se = strel('square', structElementFactor); % morphological filter for noise removal
 i=0;
 background = uint8(background);
 
@@ -138,21 +139,22 @@ while hasFrame(video)
     frame = readFrame(video);
     result = frame;
     frameGray = rgb2gray(frame);
-    backgroundSingle = background;
-    pixeldifference = frameGray(pictureSize(1), pictureSize(2))-backgroundSingle(pictureSize(1), pictureSize(2));
+    pixeldifference = frameGray - background;
+    pixeldifference = mode(mode(pixeldifference));
     % Detect the foreground in the current video frame
     fgFrame = frame;
     fgFrame = rgb2gray(fgFrame);
     fgFrame = uint8(fgFrame);
     if (pixeldifference ~= 0)
-        tempbackground = backgroundSingle+pixeldifference;
+        tempbackground = background+pixeldifference;
     else
-        tempbackground=backgroundSingle;
+        tempbackground=background;
     end
     fg = uint8(tempbackground) - fgFrame;
     fg = (fg >= tolerance) | (fg <= -tolerance);
     % Use morphological opening to remove noise in the foreground
-    filteredForeground = erosion(fg, se);
+    filteredForeground = fg;
+    %filteredForeground = erosion(filteredForeground, se);
     filteredForeground = opening(filteredForeground, se);
     
     % Detect the connected components with the specified minimum area, and
@@ -287,10 +289,12 @@ function result = opening(frame, structElement)
     result = dilation(erosion(frame, structElement), structElement);
 end
 
+%erosion
 function result = erosion(frame, structElement)
     result = imerode(frame, structElement);
 end
 
+%dilation
 function result = dilation(frame, structElement)
     result = imdilate(frame, structElement);
 end
