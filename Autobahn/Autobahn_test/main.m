@@ -1,6 +1,6 @@
 function main()
 %get Video Source
-videoSource = 'Video 3.0 #s1_STAB.mp4';
+videoSource = 'Video 3.0 #1_STAB.mp4';
 
 %starting waitbar
 percentage = 0;
@@ -13,7 +13,7 @@ video = VideoReader(videoSource);
 tolerance = 20;
 %boxes having that distance will be joined
 bboxDistTolerance = 15;
-%Size for struct Element
+%Size for struct Element (ungerade)
 structElementFactor = 5;
 
 %get FrameSize and start of Video
@@ -291,12 +291,48 @@ end
 
 %erosion
 function result = erosion(frame, structElement)
-    result = imerode(frame, structElement);
+    logical = structElement.Neighborhood;
+    logicalDimension = size(logical);
+    logicalDimensionYHalf = floor(logicalDimension(1)/2);
+    logicalDimensionXHalf = floor(logicalDimension(2)/2);
+    frameDimension = size(frame);
+    result = false(frameDimension(1), frameDimension(2));
+    for i = logicalDimensionYHalf+1:frameDimension(1)-logicalDimensionYHalf-1
+        for j = logicalDimensionXHalf+1:frameDimension(2)-logicalDimensionXHalf-1
+            temp = frame(i-logicalDimensionYHalf:i+logicalDimensionYHalf,j-logicalDimensionXHalf:j+logicalDimensionXHalf);
+            temp = temp & logical;
+            %if all(frame(i-logicalDimensionYHalf:i+logicalDimensionYHalf,j-logicalDimensionXHalf:j+logicalDimensionXHalf))
+            if all(temp)
+                result(i,j) = 1;
+            end
+        end
+    end
+    
+    %result = imerode(frame, structElement);
 end
 
 %dilation
 function result = dilation(frame, structElement)
-    result = imdilate(frame, structElement);
+    logical = structElement.Neighborhood;
+    logicalDimension = size(logical);
+    logicalDimensionYHalf = floor(logicalDimension(1)/2);
+    logicalDimensionXHalf = floor(logicalDimension(2)/2);
+    frameDimension = size(frame);
+    result = false(frameDimension(1), frameDimension(2));
+    for i = 1:frameDimension(1)
+        for j = 1:frameDimension(2)
+            if frame(i,j) == 1
+               for k = -logicalDimensionYHalf:logicalDimensionYHalf
+                   for l = -logicalDimensionXHalf:logicalDimensionXHalf
+                       if (i+k>0&&j+l>0&&i+k<=frameDimension(1)&&j+l<=frameDimension(2))
+                            result(i+k,j+l) = 1;
+                       end
+                   end
+               end
+            end
+        end
+    end
+    %result = imdilate(frame, structElement);
 end
 
 %skeletonization
