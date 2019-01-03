@@ -1,6 +1,6 @@
 function main()
 %get Video Source
-videoSource = 'Video 3.0 #1_STAB.mp4';
+videoSource = 'Clip #020.mp4';
 
 %starting waitbar
 percentage = 0;
