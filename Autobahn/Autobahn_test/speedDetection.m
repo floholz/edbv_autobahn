@@ -1,7 +1,7 @@
 clc;
 fprintf("Start \t Initialization \n");
 
-videoSource = 'Video 3.0 #1_STAB.mp4';
+videoSource = 'Video 3.mp4';
 %videoSource = 'autobahn_qf.mp4';
 %read Video
 video = VideoReader(videoSource);
@@ -23,11 +23,12 @@ pictureSize = size(frame1);
 
 %get Background
 %take 50 frames and get mode from every pixel
-countMatrix = zeros(pictureSize(1), pictureSize(2), 50);
-for i = 1:50
+numBackground = round(video.NumberOfFrames*0.05, 0);
+countMatrix = zeros(pictureSize(1), pictureSize(2), numBackground);
+for i = 1:numBackground
     countMatrix(1:end, 1:end, i) = rgb2gray(read(video, i*20)); 
     
-    percent = i/(pictureSize(1)+50);  
+    percent = i/(pictureSize(1)+numBackground);  
     perc = sprintf('\t\t %.2f %% \n', percent * 100);
     if(i ~= 1)
         fprintf(repmat('\b', 1, persSize));
@@ -38,10 +39,10 @@ end
 background = zeros(pictureSize(1), pictureSize(2));
 for i = 1:pictureSize(1)
     for j = 1:pictureSize(2)
-        background(i,j) = mode(squeeze(countMatrix(i,j,1:50)));
+        background(i,j) = mode(squeeze(countMatrix(i,j,1:numBackground)));
     end
             
-    percent = (50+i)/(pictureSize(1)+50);  
+    percent = (numBackground+i)/(pictureSize(1)+numBackground);  
     perc = sprintf('\t\t %.2f %% \n', percent * 100);
     fprintf(repmat('\b', 1, persSize));
     persSize = size(perc, 2);
@@ -306,6 +307,12 @@ while ~isDone(videoReader)
 
     
     % Draw bounding boxes around the detected cars and lines
+    
+    select = (bbox(:, 2)+bbox(:, 4))< line2begin;
+    bboxFill = bbox(select, :);
+    cbboxFill = cbbox(select);
+    
+    result = insertShape(result, 'FilledRectangle', bboxFill,'Color', cbboxFill);
     result = insertShape(result, 'Rectangle', bbox, 'Color', cbbox);
     result = insertShape(result, 'line', lines, 'Color', color);
 
@@ -330,6 +337,6 @@ fprintf(repmat('\b', 1, persSize));
 fprintf('End \t Car Detection \n');
 
 fprintf('Show processed Video \n');
-implay(taggedCars, fps/2);
+implay(taggedCars, fps);
 
 release(videoReader); % close the video file
