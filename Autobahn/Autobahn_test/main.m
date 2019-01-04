@@ -89,7 +89,7 @@ estimateDur = 0.05/pictureSize(1);
 %extract all white elements of background
 lines = background >= 250;
 %extract all lines, skeletonization
-lines = skeletonization(lines, 6);
+lines = thinning(lines);
 %opening
 lines = opening(lines, strel('line', 5, 90));
 %get beginning of lines
@@ -433,9 +433,59 @@ function result = dilation(frame, structElement)
     %result = imdilate(frame, structElement);
 end
 
-%skeletonization
-function result = skeletonization(frame, repeat)
-    result = bwmorph(frame, 'skel', repeat);
+%thinning
+function result = thinning(frame)
+changed = 1;
+
+[rows, columns] = size(frame);
+thinned_frame = frame;
+remove = ones(rows, columns);
+
+while changed
+    changed = 0;
+    
+    % Step 1
+    for i=2:rows-1
+        for j = 2:columns-1
+            P = [thinned_frame(i,j) thinned_frame(i-1,j) thinned_frame(i-1,j+1) thinned_frame(i,j+1) thinned_frame(i+1,j+1) thinned_frame(i+1,j) thinned_frame(i+1,j-1) thinned_frame(i,j-1) thinned_frame(i-1,j-1) thinned_frame(i-1,j)]; % P1, P2, P3, ... , P8, P9, P2
+            if (thinned_frame(i,j) == 1 && sum(P(2:end-1))<=6 && sum(P(2:end-1)) >=2 && P(2)*P(4)*P(6)==0 && P(4)*P(6)*P(8)==0)   % conditions
+                
+                count = 0;
+                for k = 2:size(P,2)-1
+                    if P(k) == 0 && P(k+1)==1
+                        count = count+1;
+                    end
+                end
+                if (count==1)
+                    remove(i,j)=0;
+                    changed = 1;
+                end
+            end
+        end
+    end
+    thinned_frame = thinned_frame.*remove;  
+    
+    % Step 2 
+    for i=2:rows-1
+        for j = 2:columns-1
+            P = [thinned_frame(i,j) thinned_frame(i-1,j) thinned_frame(i-1,j+1) thinned_frame(i,j+1) thinned_frame(i+1,j+1) thinned_frame(i+1,j) thinned_frame(i+1,j-1) thinned_frame(i,j-1) thinned_frame(i-1,j-1) thinned_frame(i-1,j)];
+            if (thinned_frame(i,j) == 1 && sum(P(2:end-1))<=6 && sum(P(2:end-1)) >=2 && P(2)*P(4)*P(8)==0 && P(2)*P(6)*P(8)==0)   % conditions
+                count = 0;
+                for k = 2:size(P,2)-1
+                    if P(k) == 0 && P(k+1)==1
+                       count = count+1;
+                    end
+                end
+                if (count==1)
+                    remove(i,j)=0;
+                    changed = 1;
+                end
+            end
+        end
+    end
+    thinned_frame = thinned_frame.*remove;
+end
+result = thinned_frame;
 end
 
 %conected component labelling
