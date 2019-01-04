@@ -1,12 +1,18 @@
+%% Main
+
 function main()
+% Command Window Output
+clc;
+
 %get Video Source
-videoSource = 'Clip #020.mp4';
+videoSource = 'Video 3.mp4';
 
 %starting waitbar
 percentage = 0;
 bar = waitbar(0,strcat('Loading Video... | ', {' '}, num2str(uint8(percentage*100)), '%'), 'Name', 'EDBV: Car Detection');
 %read Video
 video = VideoReader(videoSource);
+
 
 %Set tolerance for video
 %tolerance threshold for background
@@ -26,30 +32,34 @@ estimateFrames = ceil(video.FrameRate*video.Duration);
 estimateDur = 0.1/(estimateFrames+10);
 
 %get exact number of Frames
-nframes = 0;
+nframes = ceil(video.FrameRate*video.Duration);
 
-while hasFrame(video)
-    readFrame(video);
-    nframes = nframes +1;
-    %waitbar
-    percentage = percentage + estimateDur;
-    waitbar(percentage,bar,strcat('Loading Video... |', {' '}, num2str(uint8(percentage*100)), '%'));
-end
+% while hasFrame(video)
+%     readFrame(video);
+%     nframes = nframes +1;
+%     %waitbar
+%     percentage = percentage + estimateDur;
+%     waitbar(percentage,bar,strcat('Loading Video... |', {' '}, num2str(uint8(percentage*100)), '%'));
+% end
 
 %reset Video to start
 video.CurrentTime = videoStart;
 
+
+numBackground = round(nframes*0.05, 0);
+
 %waitbar
 percentage = 0.1;
 waitbar(percentage,bar,strcat('Identifying Background... |', {' '}, num2str(uint8(percentage*100)), '%'));
-estimateDur = 0.05/50;
+estimateDur = 0.05/numBackground;
 
 %get Background
 %take 50 frames and get mode from every pixel
-countMatrix = zeros(pictureSize(1), pictureSize(2), 50);
-for i = 1:50
+countMatrix = zeros(pictureSize(1), pictureSize(2), numBackground);
+
+for i = 1:numBackground
     %Jump over 20 Frames
-    for j=1:20
+    for j=1:(round(numBackground*0.2, 0))
         readFrame(video);
     end
     countMatrix(1:end, 1:end, i) = rgb2gray(readFrame(video));
@@ -63,7 +73,7 @@ estimateDur = 0.05/pictureSize(1);
 %%get mode for every pixel
 for i = 1:pictureSize(1)
     for j = 1:pictureSize(2)
-        background(i,j) = mode(squeeze(countMatrix(i,j,1:50)));
+        background(i,j) = mode(squeeze(countMatrix(i,j,1:numBackground)));
     end
     %waitbar
     percentage = percentage + estimateDur;
@@ -129,7 +139,7 @@ background = uint8(background);
 fps = video.FrameRate;
 taggedCars = zeros([pictureSize(1) pictureSize(2) pictureSize(3) nframes], 'single');
 
-mcnt = [];
+cnt2 = [0];
 
 percentage = 0.25;
 estimateDur = 0.75/nframes;
@@ -200,32 +210,117 @@ while hasFrame(video)
         end
     end
       
-    if(bbox ~= 0)
-        cnt = mcnt;
-        for k = 1:size(bbox, 1)
-            lines = [lines ; 0 bbox(k, 2)+bbox(k, 4) pictureSize(2) bbox(k, 2)+bbox(k, 4)];
-            color{1, 2+k} = 'blue';
-            
-            cbbox{1, k} = 'green';
-            
-            mcnt = cnt;
-            txtPos = [txtPos; bbox(size(bbox, 1)-(k-1), 1) bbox(size(bbox, 1)-(k-1), 2)];
-            txtStr = [txtStr; k];
-        end
-    end
+    % sort bbox by Y-Coordinate
+    [temp, order] = sort(bbox(:,2));
+    bbox = bbox(order, :);
+    bbox2 = repmat(pictureSize(2)+1, 1, 4);
     
+    
+    
+    bboxCnt = size(bbox, 1);
+    lines = [0 line2begin pictureSize(2) line2begin; 0 line1begin pictureSize(2) line1begin];
+    color = {'yellow', 'white'};
+    cbbox = {};
+    txtPos = [];
+    txtStr = [];    
+    cnt = [];
+    vel = [];
+    velStr = {};
+    
+    
+    
+    if(bbox ~= 0)
+        vel = zeros(1, size(bbox, 1)); 
+        
+        cnt = zeros(1, size(bbox, 1));
+        o = 0;
+        
+        for k = 1:size(bbox, 1)
+            lines = [lines ; 0 bbox(k, 2)+bbox(k, 4) pictureSize(2) bbox(k, 2)+bbox(k, 4)];          
+            cbbox{1, k} = 'yellow';   
+            
+            if(size(bbox,1) > size(bbox2,1))
+                bbox2 = [bbox2; repmat(pictureSize(2)+1, size(bbox, 1)-size(bbox2, 1), 4)];
+            elseif(size(bbox,1) < size(bbox2,1))
+                %bbox2 = ;
+            end 
+
+        if(size(cnt,2) > size(cnt2,2))
+            cnt2 = [cnt2 0];
+        elseif(size(cnt,2) < size(cnt2,2))
+            cnt2 = cnt2(1, 2:end);
+        end 
+
+            % car is in speed measuring area 
+            if( (bbox(k, 2)+bbox(k, 4) < line1begin) && ... 
+                    (bbox(k, 2)+bbox(k, 4) > line2begin)) && ...
+                    (bbox(k, 2) < bbox2(k, 2))
+                color{1, 2+k} = 'red';
+                cnt(1, k) = cnt2(1, k)+1;
+            % car is in speed projection area 
+            elseif (bbox(k, 2)+bbox(k, 4) > line2begin)
+                color{1, 2+k} = 'blue';
+            else                
+                color{1, 2+k} = 'magenta';  
+                cnt(1, k) = cnt2(1, k);
+                
+                if(cnt(1, k) == 0)
+                    vel(1, k) = 0;
+                else
+                    vel(1, k) = round(3.6 * 12 * fps / cnt(1, k), 0);
+                    if(vel(1, k) > 200)
+                        cbbox{1, k} = 'cyan'; 
+                    elseif(vel(1, k) > 130)
+                        cbbox{1, k} = 'red';
+                    else
+                        cbbox{1, k} = 'green'; 
+                    end
+                end
+            end
+                        
+            %mcnt = cnt;
+            txtPos = [txtPos; bbox(k, 1) bbox(k, 2)];            
+            txtStr = [txtStr; vel(1, k)];
+        end
+       
+        % Display the number of cars found in the video frame
+        result = insertText(result, txtPos, txtStr, 'BoxOpacity', 1, ...
+        'FontSize', 14);
+    
+    
+        
+        if(size(bbox,1) > size(bbox2,1))
+            %bbox2 = bbox;
+            cnt2 = [cnt 0];
+        elseif(size(bbox,1) < size(bbox2,1))
+            %bbox2 = [bbox; repmat(pictureSize(2)+1, size(bbox2)-size(bbox), 4)];
+            cnt2 = cnt(1, 2:end);
+        else
+            %bbox2 = bbox;
+            cnt2 = cnt;
+        end 
+        bbox2 = bbox;
+    else
+        if(size(bbox, 1) > size(bbox2, 1))
+        elseif(size(bbox, 1) < size(bbox2, 1))
+        else            
+        end 
+            bbox2 = repmat(pictureSize(2)+1, 1, 4);
+    
+    end   
+
     
     % Draw bounding boxes around the detected cars and lines
+    
+    select = (bbox(:, 2)+bbox(:, 4))< line2begin;
+    bboxFill = bbox(select, :);
+    cbboxFill = cbbox(select);
+    
+    result = insertShape(result, 'FilledRectangle', bboxFill,'Color', cbboxFill);
     result = insertShape(result, 'Rectangle', bbox, 'Color', cbbox);
     result = insertShape(result, 'line', lines, 'Color', color);
     
-    % Display the number of cars found in the video frame
-    result = insertText(result, txtPos, txtStr, 'BoxOpacity', 1, ...
-        'FontSize', 14);
-    
-    result = double(result);
-    
-    taggedCars(:,:,:,i) = result/255;
+    taggedCars(:,:,:,i) = double(result)/255;
     
     percentage = percentage + estimateDur;
     waitbar(percentage,bar,strcat('Analysing Frames... |', {' '}, num2str(uint8(percentage*100)), '%'));
@@ -239,6 +334,9 @@ pause(.5);
 delete(bar);
 implay(taggedCars, fps);
 end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Functions
 
 %returns minimal distance between two rectangles
 function dist = distance(x1, y1, width1, height1, x2, y2, width2, height2)
