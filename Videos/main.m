@@ -2,7 +2,7 @@ function main()
 %GUI;
 %return;
 %get Video Source
-videoSource = 'Clip #041_1.mp4';
+videoSource = 'Clip #033.mp4';
 
 %starting waitbar
 percentage = 0;
@@ -83,7 +83,7 @@ lines = background >= 215;
 %extract all lines, skeletonization
 lines = skeletonization(lines, 6);
 %opening
-lines = opening(lines, strel('line', 6, 90));
+lines = opening(lines, strel('line', 5, 90));
 %get beginning of lines
 line1begin=0;
 line2begin=0;
