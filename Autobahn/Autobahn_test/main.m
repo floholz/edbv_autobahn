@@ -1,11 +1,10 @@
 %% Main
 
 function main()
-% Command Window Output
-clc;
-
+%GUI;
+%return;
 %get Video Source
-videoSource = 'Video 3.mp4';
+videoSource = 'Clip #006_1.mp4';
 
 %starting waitbar
 percentage = 0;
@@ -13,12 +12,11 @@ bar = waitbar(0,strcat('Loading Video... | ', {' '}, num2str(uint8(percentage*10
 %read Video
 video = VideoReader(videoSource);
 
-
 %Set tolerance for video
 %tolerance threshold for background
 tolerance = 20;
 %boxes having that distance will be joined
-bboxDistTolerance = 15;
+bboxDistTolerance = 10;
 %Size for struct Element (ungerade)
 structElementFactor = 5;
 
@@ -32,34 +30,30 @@ estimateFrames = ceil(video.FrameRate*video.Duration);
 estimateDur = 0.1/(estimateFrames+10);
 
 %get exact number of Frames
-nframes = ceil(video.FrameRate*video.Duration);
+nframes = 0;
 
-% while hasFrame(video)
-%     readFrame(video);
-%     nframes = nframes +1;
-%     %waitbar
-%     percentage = percentage + estimateDur;
-%     waitbar(percentage,bar,strcat('Loading Video... |', {' '}, num2str(uint8(percentage*100)), '%'));
-% end
+while hasFrame(video)
+    readFrame(video);
+    nframes = nframes +1;
+    %waitbar
+    percentage = percentage + estimateDur;
+    waitbar(percentage,bar,strcat('Loading Video... |', {' '}, num2str(uint8(percentage*100)), '%'));
+end
 
 %reset Video to start
 video.CurrentTime = videoStart;
 
-
-numBackground = round(nframes*0.05, 0);
-
 %waitbar
 percentage = 0.1;
 waitbar(percentage,bar,strcat('Identifying Background... |', {' '}, num2str(uint8(percentage*100)), '%'));
-estimateDur = 0.05/numBackground;
+estimateDur = 0.05/50;
 
 %get Background
 %take 50 frames and get mode from every pixel
-countMatrix = zeros(pictureSize(1), pictureSize(2), numBackground);
-
-for i = 1:numBackground
+countMatrix = zeros(pictureSize(1), pictureSize(2), 50);
+for i = 1:50
     %Jump over 20 Frames
-    for j=1:(round(numBackground*0.2, 0))
+    for j=1:floor(nframes/60)
         readFrame(video);
     end
     countMatrix(1:end, 1:end, i) = rgb2gray(readFrame(video));
@@ -73,7 +67,7 @@ estimateDur = 0.05/pictureSize(1);
 %%get mode for every pixel
 for i = 1:pictureSize(1)
     for j = 1:pictureSize(2)
-        background(i,j) = mode(squeeze(countMatrix(i,j,1:numBackground)));
+        background(i,j) = mode(squeeze(countMatrix(i,j,1:50)));
     end
     %waitbar
     percentage = percentage + estimateDur;
@@ -87,22 +81,47 @@ estimateDur = 0.05/pictureSize(1);
 
 %get detection lines
 %extract all white elements of background
-lines = background >= 250;
+lines = background >= 215;
 %extract all lines, skeletonization
 lines = thinning(lines);
 %opening
-lines = opening(lines, strel('line', 5, 90));
+lines = opening(lines, strel('line', 6, 90));
 %get beginning of lines
 line1begin=0;
 line2begin=0;
 schwarz1 = 0;
 weiss1 = 0;
 schwarz2 = 0;
+%scan for most white lines
+whites = zeros(pictureSize(2));
+for i = 150:pictureSize(2)-150
+    temp = 0;
+    for j=1:pictureSize(1)
+        if lines(j,i) == 1
+            temp = temp+1;
+        end
+    end
+    whites(i) = temp;
+end
+
+mostWhites = 0;
+index = 0;
+for i = 1:size(whites)
+    if mostWhites<whites(i)
+        index =i;
+        mostWhites = whites(i);
+    end
+end
+%tolerance middle
+tolerance = 20;
+if (index-20)<1 || (index+20)>pictureSize(2)
+    index = pictureSize(2)/2;
+end
 for i = 1:pictureSize(1)-1
     percentage = percentage + estimateDur;
     waitbar(percentage,bar,strcat('Detecting Lines... |', {' '}, num2str(uint8(percentage*100)), '%'));
     if (schwarz1 == 0)
-        for j = 256:pictureSize(2)-256
+        for j = index-tolerance:index+tolerance
             if (lines(pictureSize(1)-i, j) ~= 0)
                 schwarz1 = 1;
             end
@@ -110,7 +129,7 @@ for i = 1:pictureSize(1)-1
     end
     if schwarz1 == 1
         if(weiss1==0)
-            if(~(lines(pictureSize(1)-i,256:end-256) ~= 0))
+            if(~(lines(pictureSize(1)-i,index-tolerance:index+tolerance) ~= 0))
                 weiss1 = 1;
                 line1begin=pictureSize(1)-i;
             end
@@ -118,7 +137,7 @@ for i = 1:pictureSize(1)-1
     end
     if weiss1 == 1
         if(schwarz2==0)
-            for j = 256:pictureSize(2)-256
+            for j = index-tolerance:index+tolerance
                 if (lines(pictureSize(1)-i, j) ~= 0)
                     schwarz2 = 1;
                     line2begin = pictureSize(1)-i;
@@ -127,6 +146,9 @@ for i = 1:pictureSize(1)-1
         end
     end
 end
+
+line1begin = line1begin -3;
+line2begin = line2begin +3;
 
 video.CurrentTime = videoStart;
 
@@ -139,6 +161,9 @@ background = uint8(background);
 fps = video.FrameRate;
 taggedCars = zeros([pictureSize(1) pictureSize(2) pictureSize(3) nframes], 'single');
 
+mcnt = [];
+bboxCnt = 0;
+bboxCntPre = 0;
 cnt2 = [0];
 
 percentage = 0.25;
@@ -210,7 +235,33 @@ while hasFrame(video)
         end
     end
       
-    % sort bbox by Y-Coordinate
+%     if(bbox ~= 0)
+%         cnt = mcnt;
+%         for k = 1:size(bbox, 1)
+%             lines = [lines ; 0 bbox(k, 2)+bbox(k, 4) pictureSize(2) bbox(k, 2)+bbox(k, 4)];
+%             color{1, 2+k} = 'blue';
+%             
+%             cbbox{1, k} = 'green';
+%             
+%             mcnt = cnt;
+%             txtPos = [txtPos; bbox(size(bbox, 1)-(k-1), 1) bbox(size(bbox, 1)-(k-1), 2)];
+%             txtStr = [txtStr; k];
+%         end
+%     end
+%     
+%     
+%     % Draw bounding boxes around the detected cars and lines
+%     result = insertShape(result, 'Rectangle', bbox, 'Color', cbbox);
+%     result = insertShape(result, 'line', lines, 'Color', color);
+%     
+%     % Display the number of cars found in the video frame
+%     result = insertText(result, txtPos, txtStr, 'BoxOpacity', 1, ...
+%         'FontSize', 14);
+%     
+%     result = double(result);
+
+%%%%%%%%%%%%%%%%%%%
+% sort bbox by Y-Coordinate
     [temp, order] = sort(bbox(:,2));
     bbox = bbox(order, :);
     bbox2 = repmat(pictureSize(2)+1, 1, 4);
@@ -225,13 +276,15 @@ while hasFrame(video)
     txtStr = [];    
     cnt = [];
     vel = [];
-    velStr = {};
     
+    
+    if(bboxCnt > 2)
+        lol = 1;
+    end
     
     
     if(bbox ~= 0)
         vel = zeros(1, size(bbox, 1)); 
-        
         cnt = zeros(1, size(bbox, 1));
         o = 0;
         
@@ -245,6 +298,12 @@ while hasFrame(video)
                 %bbox2 = ;
             end 
 
+%             if(bbox(k, 2)+bbox(k, 4) <= line1begin && bbox(k, 2)+bbox(k, 4) >= line2begin)
+%                 if(bbox(k, 2) < bbox2(k, 2))
+%                     cnt(1,k) = cnt(1,k) + 1;                
+%                 end
+%             end
+            
         if(size(cnt,2) > size(cnt2,2))
             cnt2 = [cnt2 0];
         elseif(size(cnt,2) < size(cnt2,2))
@@ -269,7 +328,8 @@ while hasFrame(video)
                 else
                     vel(1, k) = round(3.6 * 12 * fps / cnt(1, k), 0);
                     if(vel(1, k) > 200)
-                        cbbox{1, k} = 'cyan'; 
+                        %vel(1, k) = 9999;
+                        cbbox{1, k} = 'cyan';
                     elseif(vel(1, k) > 130)
                         cbbox{1, k} = 'red';
                     else
@@ -280,7 +340,7 @@ while hasFrame(video)
                         
             %mcnt = cnt;
             txtPos = [txtPos; bbox(k, 1) bbox(k, 2)];            
-            txtStr = [txtStr; vel(1, k)];
+            txtStr = [txtStr; vel(1,k)];
         end
        
         % Display the number of cars found in the video frame
@@ -319,8 +379,9 @@ while hasFrame(video)
     result = insertShape(result, 'FilledRectangle', bboxFill,'Color', cbboxFill);
     result = insertShape(result, 'Rectangle', bbox, 'Color', cbbox);
     result = insertShape(result, 'line', lines, 'Color', color);
-    
-    taggedCars(:,:,:,i) = double(result)/255;
+    %%%%%%%%%%%%%
+    result = double(result);
+    taggedCars(:,:,:,i) = result/255;
     
     percentage = percentage + estimateDur;
     waitbar(percentage,bar,strcat('Analysing Frames... |', {' '}, num2str(uint8(percentage*100)), '%'));
@@ -334,9 +395,6 @@ pause(.5);
 delete(bar);
 implay(taggedCars, fps);
 end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Functions
 
 %returns minimal distance between two rectangles
 function dist = distance(x1, y1, width1, height1, x2, y2, width2, height2)
@@ -389,48 +447,48 @@ end
 
 %erosion
 function result = erosion(frame, structElement)
-    logical = structElement.Neighborhood;
-    logicalDimension = size(logical);
-    logicalDimensionYHalf = floor(logicalDimension(1)/2);
-    logicalDimensionXHalf = floor(logicalDimension(2)/2);
-    frameDimension = size(frame);
-    result = false(frameDimension(1), frameDimension(2));
-    for i = logicalDimensionYHalf+1:frameDimension(1)-logicalDimensionYHalf-1
-        for j = logicalDimensionXHalf+1:frameDimension(2)-logicalDimensionXHalf-1
-            temp = frame(i-logicalDimensionYHalf:i+logicalDimensionYHalf,j-logicalDimensionXHalf:j+logicalDimensionXHalf);
-            temp = temp & logical;
-            %if all(frame(i-logicalDimensionYHalf:i+logicalDimensionYHalf,j-logicalDimensionXHalf:j+logicalDimensionXHalf))
-            if all(temp)
-                result(i,j) = 1;
-            end
-        end
-    end
-    
-    %result = imerode(frame, structElement);
+%     logical = structElement.Neighborhood;
+%     logicalDimension = size(logical);
+%     logicalDimensionYHalf = floor(logicalDimension(1)/2);
+%     logicalDimensionXHalf = floor(logicalDimension(2)/2);
+%     frameDimension = size(frame);
+%     result = false(frameDimension(1), frameDimension(2));
+%     for i = logicalDimensionYHalf+1:frameDimension(1)-logicalDimensionYHalf-1
+%         for j = logicalDimensionXHalf+1:frameDimension(2)-logicalDimensionXHalf-1
+%             temp = frame(i-logicalDimensionYHalf:i+logicalDimensionYHalf,j-logicalDimensionXHalf:j+logicalDimensionXHalf);
+%             temp = temp & logical;
+%             %if all(frame(i-logicalDimensionYHalf:i+logicalDimensionYHalf,j-logicalDimensionXHalf:j+logicalDimensionXHalf))
+%             if all(temp)
+%                 result(i,j) = 1;
+%             end
+%         end
+%     end
+%     
+    result = imerode(frame, structElement);
 end
 
 %dilation
 function result = dilation(frame, structElement)
-    logical = structElement.Neighborhood;
-    logicalDimension = size(logical);
-    logicalDimensionYHalf = floor(logicalDimension(1)/2);
-    logicalDimensionXHalf = floor(logicalDimension(2)/2);
-    frameDimension = size(frame);
-    result = false(frameDimension(1), frameDimension(2));
-    for i = 1:frameDimension(1)
-        for j = 1:frameDimension(2)
-            if frame(i,j) == 1
-               for k = -logicalDimensionYHalf:logicalDimensionYHalf
-                   for l = -logicalDimensionXHalf:logicalDimensionXHalf
-                       if (i+k>0&&j+l>0&&i+k<=frameDimension(1)&&j+l<=frameDimension(2))
-                            result(i+k,j+l) = 1;
-                       end
-                   end
-               end
-            end
-        end
-    end
-    %result = imdilate(frame, structElement);
+%     logical = structElement.Neighborhood;
+%     logicalDimension = size(logical);
+%     logicalDimensionYHalf = floor(logicalDimension(1)/2);
+%     logicalDimensionXHalf = floor(logicalDimension(2)/2);
+%     frameDimension = size(frame);
+%     result = false(frameDimension(1), frameDimension(2));
+%     for i = 1:frameDimension(1)
+%         for j = 1:frameDimension(2)
+%             if frame(i,j) == 1
+%                for k = -logicalDimensionYHalf:logicalDimensionYHalf
+%                    for l = -logicalDimensionXHalf:logicalDimensionXHalf
+%                        if (i+k>0&&j+l>0&&i+k<=frameDimension(1)&&j+l<=frameDimension(2))
+%                             result(i+k,j+l) = 1;
+%                        end
+%                    end
+%                end
+%             end
+%         end
+%     end
+    result = imdilate(frame, structElement);
 end
 
 %thinning
